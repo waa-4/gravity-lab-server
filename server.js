@@ -69,7 +69,11 @@ function broadcast(room, data) {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(data));
     }
-  });
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
+
 }
 
 console.log("Gravity Lab server running");
