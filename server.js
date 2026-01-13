@@ -1,5 +1,7 @@
 const WebSocket = require("ws");
-const server = new WebSocket.Server({ port: process.env.PORT || 8080 });
+
+const PORT = process.env.PORT || 8080;
+const wss = new WebSocket.Server({ port: PORT });
 
 let rooms = {};
 
@@ -14,66 +16,75 @@ function makeRoom() {
   };
 }
 
-server.on("connection", socket => {
-  let roomId = null;
-  let playerId = Math.random().toString(36).slice(2);
+function broadcast(roomId, data) {
+  const msg = JSON.stringify(data);
+
+  wss.clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN && client.roomId === roomId) {
+      client.send(msg);
+    }
+  });
+}
+
+wss.on("connection", socket => {
+  socket.id = Math.random().toString(36).slice(2);
+  socket.roomId = null;
 
   socket.on("message", msg => {
     try {
-      let data = JSON.parse(msg);
+      const data = JSON.parse(msg);
 
       // Join room
       if (data.type === "join") {
-        roomId = data.room;
+        socket.roomId = data.room;
 
-        if (!rooms[roomId]) rooms[roomId] = makeRoom();
-        rooms[roomId].players[playerId] = { x: 0, y: 0 };
+        if (!rooms[socket.roomId]) {
+          rooms[socket.roomId] = makeRoom();
+        }
+
+        rooms[socket.roomId].players[socket.id] = { x: 0, y: 0 };
 
         socket.send(JSON.stringify({
           type: "settings",
-          settings: rooms[roomId].settings
+          settings: rooms[socket.roomId].settings
         }));
       }
 
-      // Player move
-      if (data.type === "move" && rooms[roomId]) {
-        rooms[roomId].players[playerId] = data.pos;
+      // Player movement
+      if (data.type === "move" && rooms[socket.roomId]) {
+        rooms[socket.roomId].players[socket.id] = data.pos;
 
-        broadcast(roomId, {
+        broadcast(socket.roomId, {
           type: "players",
-          players: rooms[roomId].players
+          players: rooms[socket.roomId].players
         });
       }
 
       // Host settings
-      if (data.type === "settings" && rooms[roomId]) {
-        rooms[roomId].settings = data.settings;
-        broadcast(roomId, {
+      if (data.type === "settings" && rooms[socket.roomId]) {
+        rooms[socket.roomId].settings = data.settings;
+
+        broadcast(socket.roomId, {
           type: "settings",
           settings: data.settings
         });
       }
 
-    } catch (e) {}
+    } catch (e) {
+      console.log("Bad message:", msg);
+    }
   });
 
   socket.on("close", () => {
-    if (roomId && rooms[roomId]) {
-      delete rooms[roomId].players[playerId];
+    if (socket.roomId && rooms[socket.roomId]) {
+      delete rooms[socket.roomId].players[socket.id];
+
+      broadcast(socket.roomId, {
+        type: "players",
+        players: rooms[socket.roomId].players
+      });
     }
   });
 });
 
-function broadcast(room, data) {
-  server.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(data));
-    }
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
-
-}
-
-console.log("Gravity Lab server running");
+console.log("Gravity Lab WebSocket server running on port", PORT);
